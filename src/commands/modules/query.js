@@ -23,9 +23,9 @@ class Query extends Command {
     return input.response(CommentBuilder.create({
       data : res
     }));
-
   }
 }
+
 
 //registration
 exports.register =  (commands) => {
