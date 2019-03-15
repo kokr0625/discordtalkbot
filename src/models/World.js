@@ -7,10 +7,6 @@ var fs = require('fs'),
   bot = botStuff.bot;
 
 class World {
-  static get NEGLECT_TIMEOUT_IN_MS() {
-    return 120 * 60 * 1000;
-  }
-
 
   constructor() {
     this.servers = {};
@@ -18,76 +14,32 @@ class World {
     this.broadcastID = null;
     this.broadcastMessage = null;
     this.broadcaster = null;
-    this.presence_timeout = null;
     this.presence_renderers = [this.renderPresenceCounts, this.renderPresenceHelp, this.renderPresenceFollow];
     this.presence_renderers_index = 0;
+    this.presence_rotation_timeout = null;
+    this.presence_timeout = null;
     
-    this.resetDailyStats();
   }
 
+  startup() {
+    var world = this;
+    world.resetDailyStats();
+    world.startDailyResetTimer();
+    world.setPresence();
+    world.startPresenceRotation();
+  };  
   
   addServer(server) {
     if (!server.server_id) return;
     this.servers[server.server_id] = server;
-    this.setPresence();
+    server.rejoinVoiceChannelOnStartup();
   }
 
   removeServer(server) {
     if ( !this.servers[server.server_id] ) return;
-    this.servers[server.server_id].save();
     delete this.servers[server.server_id];
-    this.setPresence();
-  }
-
-  broadcast(message, user_id) {
-    var self = this;
-    if (!(auth.dev_ids.indexOf(user_id) >= 0)) {
-      return;
-    }
-
-    if (this.broadcastID == null) {
-      this.broadcastID = (Math.floor(Math.random() * 90000) + 10000) + "";
-      this.broadcastMessage = message;
-      this.broadcaster = user_id;
-
-      setTimeout(function () {
-        self.broadcastID = null;
-        self.broadcastMessage = null;
-        self.broadcaster = null;
-      }, 20000);
-
-      return this.broadcastID;
-
-    } else if (this.broadcaster != user_id) {
-      for (var key in bot.servers) {
-        var server = bot.servers[key];
-        bot.sendMessage({
-          to: server.owner_id,
-          message: self.broadcastMessage
-        });
-      }
-
-      self.broadcastID = null;
-      self.broadcastMessage = null;
-      self.broadcaster = null;
-    }
-
-    return null;
-  }
-
-  unpermitAll() {
-    for (var server in this.servers) {
-      server.release();
-    }
-  }
-
-  getServerFromChannel(channel_id) {
-    var chan = bot.channels[channel_id];
-    if (chan) {
-      var server = this.servers[bot.channels[channel_id].guild_id];
-      return server;
-    }
-    return null;
+    server.save();
+    server.dispose();
   }
 
   checkMastersVoiceChannels(user_id) {
@@ -101,21 +53,23 @@ class World {
     // itself.
     // run delayed execution of the code to get the real answers
     var delayed_execution = function() {
-      var voiceChan = botStuff.getUserVoiceChannel(user_id);
+      var chan_id = botStuff.getUserVoiceChannel(user_id);
       
       var leave_servers = [];
       var delayed_leave = function() {
         for ( var i=0;i<leave_servers.length;i++) {
-          leave_servers[i].leaveVoiceChannel();
-          if ( voiceChan) leave_servers[i].joinVoiceChannel(voiceChan);
-          else leave_servers[i].startUnfollowTimer();
+          if ( chan_id) leave_servers[i].switchVoiceChannel(chan_id);
+          else {
+            leave_servers[i].startUnfollowTimer();
+            leave_servers[i].leaveVoiceChannel();
+          }
         }
       };
       
       for (var server_id in world.servers) {
         var s = world.servers[server_id];
         if (s.bound_to == user_id) {
-          if (voiceChan != s.current_voice_channel_id) {
+          if (chan_id != s.current_voice_channel_id) {
             leave_servers.push(s);
             s.talk("Oh no my master left me!", null, delayed_leave);
           }
@@ -137,7 +91,7 @@ class World {
         game: {
           name: w.renderPresence(),
           type: 1,
-          url: 'https://github.com/wootosmash/talkbot'
+          url: 'https://github.com/nullabork/talkbot'
         }
       });
     };
@@ -161,6 +115,15 @@ class World {
     process.exit();
   }
   
+  getActiveServersCount() {
+    var w = this;
+    var c = 0;
+    for (var s in w.servers) {
+      if (w.servers[s].isBound()) c++;
+    }
+    return c;
+  };
+  
   incrementStatDailyActiveServers(server_id) {
     this._dailyStats.activeServers[server_id] = 1;
   };
@@ -183,9 +146,12 @@ class World {
   startPresenceRotation() {
     var world = this;
     var rotatePresenceBanner = function() {
-      world.nextPresenceRenderer();
-      world.setPresence();
-      setTimeout(rotatePresenceBanner, 15000);
+      var w = world;
+      w.nextPresenceRenderer();
+      w.setPresence();
+      if ( w.presence_rotation_timeout )
+        clearTimeout(w.presence_rotation_timeout);
+      w.presence_rotation_timeout = setTimeout(rotatePresenceBanner, 15000);
     };
     
     rotatePresenceBanner();
@@ -196,27 +162,33 @@ class World {
   };
   
   renderPresence() {
-    return this.presence_renderers[this.presence_renderers_index % this.presence_renderers.length]();
+    var renderer = this.presence_renderers[this.presence_renderers_index % this.presence_renderers.length];
+    return renderer.call(this); //HACKSSSS
   };
   
   renderPresenceFollow() {
-    return Object.keys(bot.servers).length + " servers, !follow";
+    var cmds = require("@commands");
+    return Object.keys(bot.servers).length + " servers, " + cmds.command_char + "follow";
   };
   
   renderPresenceHelp() {
-    return Object.keys(bot.servers).length + " servers, !help";
+    var cmds = require("@commands");
+    return Object.keys(bot.servers).length + " servers, " + cmds.command_char + "help";
   };
   
   renderPresenceCounts() {
     var w = this;
-    var c = 0;
-    for (var s in w.servers) {
-      if (w.servers[s].isBound()) c++;
+    var s = Object.keys(bot.servers).length + " servers, " + w.getActiveServersCount() + " active";
+    return s;
+  };
+  
+  dispose() {
+    for ( var s in this.servers ) {
+      this.servers[s].dispose();
     }
     
-    var s = Object.keys(bot.servers).length + " servers, " + c + " active";
-    
-    return s;
+    clearTimeout(this.presence_timeout);
+    clearTimeout(this.presence_rotation_timeout);
   };
   
 }

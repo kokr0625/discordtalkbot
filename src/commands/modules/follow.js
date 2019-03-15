@@ -25,7 +25,15 @@ function follow(msg, server, world) {
     if (voiceChan) {
       server.setMaster(msg.user_id, msg.username);
       server.joinVoiceChannel(voiceChan);
-      msg.response(server.lang('follow.okay'));
+
+      var muted = "";
+
+      if (server.getUserSetting(msg.user_id, 'muted')) {
+        muted = "\n" + server.lang('mute.unmuted');
+        server.addUserSetting(msg.user_id,'muted',false);
+      }
+
+      msg.response(server.lang('follow.okay') + muted);
     } else {
       msg.response(server.lang('follow.join'));
     }
@@ -87,7 +95,15 @@ function sidle(msg, server, world) {
   var voiceChan = msg.getOwnersVoiceChannel();
   if (voiceChan) {
     server.joinVoiceChannel(voiceChan);
-    msg.response(server.lang('sidle.okay'));
+
+    var muted = "";
+
+    if (server.getUserSetting(msg.user_id, 'muted')) {
+      muted = "\n" + server.lang('mute.unmuted');
+      server.addUserSetting(msg.user_id,'muted',false);
+    }
+
+    msg.response(server.lang('sidle.okay') + muted);
   } else {
     msg.response(server.lang('sidle.broken'));
   }
@@ -134,9 +150,18 @@ function transfer(msg, server, world) {
   var voiceChan = server.getOwnersVoiceChannel(user_id);
   if (voiceChan) {
     server.joinVoiceChannel(voiceChan);
+
+    var muted = "";
+
+    if (server.getUserSetting(msg.user_id, 'muted')) {
+      muted = "\n" + server.lang('mute.unmuted');
+      server.addUserSetting(msg.user_id,'muted',false);
+    }
+
     msg.response(server.lang('transfer.okay', {
       name : server.getBoundToNick()
-    }));
+    }) + muted);
+
   } else {
     msg.response(server.lang('transfer.broken'));
   }
@@ -147,7 +172,8 @@ var command_follow = new BotCommand({
   execute: follow,
   short_help: 'follow.shorthelp',
   long_help: 'follow.longhelp',
-  group: "control"
+  group: "control",
+  order : 0
 });
 
 var command_unfollow = new BotCommand({
@@ -155,7 +181,8 @@ var command_unfollow = new BotCommand({
   execute: unfollow,
   short_help: 'unfollow.shorthelp',
   long_help: 'unfollow.longhelp',
-  group: "control"
+  group: "control",
+  order : 2
 });
 
 var command_sidle = new BotCommand({
@@ -171,7 +198,9 @@ var command_transfer = new BotCommand({
   execute: transfer,
   short_help: 'transfer.shorthelp',
   long_help: 'transfer.longhelp',
-  group: "control"
+  group: "control",
+  order : 3
+
 });
 
 exports.register = function (commands) {

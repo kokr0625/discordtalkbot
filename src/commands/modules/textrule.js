@@ -29,10 +29,14 @@ class TextRule extends Command {
     return false;
   }
 
+  static testRule(rule) {
+    return (new RegExp(textrule, 'gi')).test(rule);
+  }
+
   static addRule({server, find, replacement, regex}) {
     if (!find) return;
     server.addSettings('textrules', {
-      [find] : !regex?Common.escapeRegExp(replacement):replacement
+      [!regex?Common.escapeRegExp(find):find] : replacement
     });
     server.save();
   }
@@ -80,9 +84,16 @@ class TextRule extends Command {
 
   execute ({input, server, world}) {
 
-    var rule_command = input.args[0],
-      find = input.args[1],
-      replacement = input.args[3];
+    var args = [
+        ...input.args
+      ],
+      rule_command = args.shift(),
+      message = args.join(' '),
+      opts = message.split('->'),
+
+
+      find = opts.length > 0 ? opts[0].trim() : null,
+      replacement = opts.length > 1 ? opts[1].trim() : null;
 
 
 
@@ -108,7 +119,7 @@ class TextRule extends Command {
      /**
      * ADD TEXTRULE
      */
-    if(/^(addRegex|setRegex)$/i.test( rule_command.trim() ))
+    if(/^(addRegex|setRegex|setPattern)$/i.test( rule_command ))
     {
       if (!input.ownerCanManageTheServer())    return input.il8nResponse('textrule.nope');
       if (!find) return input.il8nResponse('textrule.needsFind', { rule_command });
@@ -152,7 +163,7 @@ class TextRule extends Command {
       if (!input.ownerCanManageTheServer()) return input.il8nResponse('textrule.nope');
       if (!rules[find])                     return input.il8nResponse('textrule.none', { find });
 
-      TextRule.deleteRule(server, find);
+      TextRule.deleteRule({server, find});
 
       return input.il8nResponse('textrule.delokay', { find });
     }
@@ -203,6 +214,8 @@ class TextRule extends Command {
     message = modified || message;
 
     for ( var textrule in server.textrules ) {
+
+
       var re = new RegExp(textrule, 'gi');
       message = message.replace(re, server.textrules[textrule]);
     }

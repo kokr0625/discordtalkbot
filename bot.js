@@ -1,10 +1,20 @@
-
+/*
+ *  _____     _ _    ____        _
+ * |_   _|_ _| | | _| __ )  ___ | |_
+ *   | |/ _` | | |/ /  _ \ / _ \| __|
+ *   | | (_| | |   <| |_) | (_) | |_
+ *   |_|\__,_|_|_|\_\____/ \___/ \__|
+ *
+ * http://github.com/nullabork/talkbot
+ */
 
 //npm imports
 require('module-alias/register');
 var figlet = require('figlet');
+
 var path = require('path'),
   paths = require('@paths');
+
 //helpers
 var commands = require('@commands'),
   botStuff = require('@helpers/bot-stuff'),
@@ -26,19 +36,19 @@ var bot = botStuff.bot;
 
 // FANCY SPLASH SCREEN
 figlet('TalkBot', function(err, data) {
-  console.log(data)
+  console.log(data);
 });
 
 // when the server is ready to go
 bot.on('ready', function (evt) {
   Common.out('Logged in as: ' + bot.username + ' - (' + bot.id + ')');
-  world.startDailyResetTimer();
-  world.setPresence();
-  world.startPresenceRotation();
+  world.startup();
 });
 
 // if we get disconnected???
 bot.on('disconnect', function (evt) {
+  world.saveAll();
+  world.dispose();
   Common.out('Disconnected, reconnecting');
   Common.out(evt);
   bot.connect();
@@ -61,20 +71,8 @@ bot.on('any', function (evt) {
 
     var server = world.servers[server_id];
     if (server == null || server.isMaster(user_id)) {
-      Common.out("What server?: " + channel_id);
       if ( user_id ) world.checkMastersVoiceChannels(user_id);
       return null;
-    }
-
-    //was this eventer the current
-    if (server.isMaster(user_id)) {
-      if (!channel_id) {
-        if (server.inChannel()) {
-          server.leaveVoiceChannel();
-        }
-      } else {
-        server.joinVoiceChannel(channel_id);
-      }
     }
   }
 });
@@ -82,19 +80,25 @@ bot.on('any', function (evt) {
 // new servers arrive
 bot.on('guildCreate', function(server) {
   var server_id = server.id;
-  world.addServer(new Server(server_id));
-  Common.out("Server " + bot.servers[server_id].name + " started");
+
+  //create server instance
+  let s = new Server(server_id,world);
+  //add the relationships
+  world.addServer(s);
+
 });
 
-// new servers get deleted
+// servers get deleted
 bot.on('guildDelete', function(server) {
   if (!server) return; // why would we lose a server?
+                       // because the world isn't a marshmallow
   var world_server = world.servers[server.id];
   var name = world_server.server_name;
   world.removeServer(world_server);
   Common.out("Server " + name + " removed");
 });
 
+// when messages come in
 bot.on('message', function (username, user_id, channel_id, message, evt) {
 
   if (!evt.d) return null;
@@ -142,8 +146,6 @@ bot.on('message', function (username, user_id, channel_id, message, evt) {
       message: cmdMessage,
     });
 
-    //commands.run(msgDets.cmd, [msgDets, server, world]);
-
     var command = commands.get(msgDets.cmd);
     if(!command) return;
 
@@ -155,11 +157,13 @@ bot.on('message', function (username, user_id, channel_id, message, evt) {
     }
 
   } else {
+    // if its not a command speak it
     var settings = server.getUserSettings(user_id);
     if ( !settings.muted ) server.speak(message, channel_id, user_id, world);
   }
 });
 
+// ctrl-c
 process.on('SIGINT', function () {
   Common.out('SIGINT');
   world.saveAll();
@@ -167,6 +171,7 @@ process.on('SIGINT', function () {
   process.exit();
 });
 
+// something goes wrong we didnt think of or having got around to putting a band-aid fix on
 process.on('uncaughtException', function (err) {
   Common.out('uncaughtException');
   world.saveAll();
