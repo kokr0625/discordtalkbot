@@ -4,11 +4,13 @@ var fs = require('fs'),
   botStuff = require("@helpers/bot-stuff"),
   Server = require("@models/Server"),
   auth = require("@auth"),
+  Model = require('@models/Model'),
   bot = botStuff.bot;
 
-class World {
+class World extends Model {
 
   constructor() {
+    super()
     this.servers = {};
     this.broadcastTimout = null;
     this.broadcastID = null;
@@ -16,9 +18,9 @@ class World {
     this.broadcaster = null;
     this.presence_renderers = [this.renderPresenceCounts, this.renderPresenceHelp, this.renderPresenceFollow];
     this.presence_renderers_index = 0;
-    this.presence_rotation_timeout = null;
-    this.presence_timeout = null;
-    
+    this._presence_rotation_timeout = null;
+    this._presence_timeout = null;
+
   }
 
   startup() {
@@ -27,8 +29,8 @@ class World {
     world.startDailyResetTimer();
     world.setPresence();
     world.startPresenceRotation();
-  };  
-  
+  };
+
   addServer(server) {
     if (!server.server_id) return;
     this.servers[server.server_id] = server;
@@ -54,7 +56,7 @@ class World {
     // run delayed execution of the code to get the real answers
     var delayed_execution = function() {
       var chan_id = botStuff.getUserVoiceChannel(user_id);
-      
+
       var leave_servers = [];
       var delayed_leave = function() {
         for ( var i=0;i<leave_servers.length;i++) {
@@ -65,7 +67,7 @@ class World {
           }
         }
       };
-      
+
       for (var server_id in world.servers) {
         var s = world.servers[server_id];
         if (s.bound_to == user_id) {
@@ -84,7 +86,7 @@ class World {
 
     var w = this;
     var presence_timer = function() {
-      w.presence_timeout = null;
+      w._presence_timeout = null;
 
       bot.setPresence({
         status: 'online',
@@ -95,26 +97,26 @@ class World {
         }
       });
     };
-    
+
     // this protects against spamming discord with presence updates
     // and getting banned
-    if ( this.presence_timeout )
-      clearTimeout(this.presence_timeout);
-    this.presence_timeout = setTimeout(presence_timer, 50);
+    if ( this._presence_timeout )
+      clearTimeout(this._presence_timeout);
+    this._presence_timeout = setTimeout(presence_timer, 50);
   }
-  
+
   saveAll() {
     for (var server_id in this.servers) {
       this.servers[server_id].save();
     }
   };
-  
+
   kill() {
     this.saveAll();
     bot.disconnect();
     process.exit();
   }
-  
+
   getActiveServersCount() {
     var w = this;
     var c = 0;
@@ -123,74 +125,74 @@ class World {
     }
     return c;
   };
-  
+
   incrementStatDailyActiveServers(server_id) {
     this._dailyStats.activeServers[server_id] = 1;
   };
-  
+
   startDailyResetTimer() {
     var world = this;
     var daily_reset = function() {
       world.resetDailyStats();
     };
-    
+
     setTimeout(daily_reset, 24 * 60 * 60 * 1000);
   };
-  
+
   resetDailyStats() {
     this.dailyStats = this._dailyStats;
     this._dailyStats = {};
     this._dailyStats.activeServers = {};
   };
-  
+
   startPresenceRotation() {
     var world = this;
     var rotatePresenceBanner = function() {
       var w = world;
       w.nextPresenceRenderer();
       w.setPresence();
-      if ( w.presence_rotation_timeout )
-        clearTimeout(w.presence_rotation_timeout);
-      w.presence_rotation_timeout = setTimeout(rotatePresenceBanner, 15000);
+      if ( w._presence_rotation_timeout )
+        clearTimeout(w._presence_rotation_timeout);
+      w._presence_rotation_timeout = setTimeout(rotatePresenceBanner, 15000);
     };
-    
+
     rotatePresenceBanner();
   };
-  
+
   nextPresenceRenderer() {
     this.presence_renderers_index++;
   };
-  
+
   renderPresence() {
     var renderer = this.presence_renderers[this.presence_renderers_index % this.presence_renderers.length];
     return renderer.call(this); //HACKSSSS
   };
-  
+
   renderPresenceFollow() {
     var cmds = require("@commands");
     return Object.keys(bot.servers).length + " servers, " + cmds.command_char + "follow";
   };
-  
+
   renderPresenceHelp() {
     var cmds = require("@commands");
     return Object.keys(bot.servers).length + " servers, " + cmds.command_char + "help";
   };
-  
+
   renderPresenceCounts() {
     var w = this;
     var s = Object.keys(bot.servers).length + " servers, " + w.getActiveServersCount() + " active";
     return s;
   };
-  
+
   dispose() {
     for ( var s in this.servers ) {
       this.servers[s].dispose();
     }
-    
-    clearTimeout(this.presence_timeout);
-    clearTimeout(this.presence_rotation_timeout);
+
+    clearTimeout(this._presence_timeout);
+    clearTimeout(this._presence_rotation_timeout);
   };
-  
+
 }
 
 module.exports = new World();

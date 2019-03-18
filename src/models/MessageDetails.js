@@ -19,8 +19,13 @@ class MessageDetails {
     }
   }
 
-  response(message) {
+  response(message, opts) {
     var _this = this;
+
+    if(opts && opts.pre && message && typeof message == 'string') {
+      message = `\`\`\`\n ${message} \n\`\`\``;
+    }
+
     _this.bot.simulateTyping(_this.channel_id, function () {
       _this.bot.sendMessage({
         to: _this.channel_id,
@@ -60,6 +65,7 @@ class MessageDetails {
   il8nResponse(key, params) {
     return this.response(this.server.lang(key, params));
   }
+
 
   ownerIsServerOwner() {
     return this.server.server_owner_user_id == this.user_id;

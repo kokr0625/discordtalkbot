@@ -44,15 +44,15 @@ function ohshit(msg, server, world) {
 
     server.save(paths.config + '/ohshit' + (d.getTime()) + '.json');
 
-    function replacer(key, value) {
-      if (key.endsWith("_timeout")) return undefined; // these keys are internal timers that we dont want to save
-      if (key == "commandResponses") return undefined;
-      if (key == "world") return undefined;
-      else return value;
-    };
+    // function replacer(key, value) {
+    //   if (key.endsWith("_timeout")) return undefined; // these keys are internal timers that we dont want to save
+    //   if (key == "command_responses") return undefined;
+    //   if (key == "world") return undefined;
+    //   else return value;
+    // };
 
     _filename = paths.config + '/ohshit-world-' + (d.getTime()) + '.json';
-    fs.writeFileSync(_filename, JSON.stringify(world, replacer), 'utf-8');
+    fs.writeFileSync(_filename, JSON.stringify(world), 'utf-8');
 
     _filename = paths.config + '/ohshit-bot-' + (d.getTime()) + '.json';
     fs.writeFileSync(_filename, util.inspect(bot), 'utf-8');
@@ -60,7 +60,6 @@ function ohshit(msg, server, world) {
     msg.response(server.lang('ohshit.okay'));
   }
 };
-
 
 
 function debug(msg, server, world) {
@@ -82,8 +81,6 @@ function debug(msg, server, world) {
   for (var s in world.servers) {
     if (world.servers[s].isBound()) r += world.servers[s].server_name + " - " + world.servers[s].bound_to_username + "\n";
   }
-
-
 
   msg.response(r);
 

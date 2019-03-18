@@ -7,6 +7,7 @@ var Lang = require("lang.js"),
   MessageDetails = require('@models/MessageDetails'),
   Common = require('@helpers/common'),
   langmap = require('@helpers/langmap'),
+  Model = require('@models/Model'),
   auth = require('@auth'),
   bot = botStuff.bot,
   fs = require('fs');
@@ -18,9 +19,11 @@ var P_MANAGE_GUILD = 0x00000020;
 var TIMEOUT_LEAVEVOICE = 30000; // 30 seconds
 var TIMEOUT_NEGLECT = 120 * 60 * 1000; // 2 hours
 
-class Server {
+class Server extends Model {
 
   constructor(server_id, world) {
+    super();
+
     this.server_id = server_id;
 
     var inst = bot.servers[this.server_id];
@@ -33,26 +36,39 @@ class Server {
       this.server_owner_username = this.users[this.server_owner_user_id];
 
     this.audioEmojis = state_data.audioEmojis || {};
-    this.userSettings = state_data.userSettings || {};
+    this.user_settings = state_data.user_settings || state_data.userSettings || {};
     this.textrules = state_data.textrules || { "o\\/": "wave", "\\\\o": "wave ack", "\\\\o\\/": "hooray", "\\(y\\)": "thumbs up", "\\(n\\)": "thumbs down" };
     this.bound_to = state_data.bound_to;
     this.bound_to_username = state_data.bound_to_username;
     this.current_voice_channel_id = state_data.current_voice_channel_id;
     this.permitted = {};
-    this.neglect_timeout = null;
+    this._neglect_timeout = null;
     this.language = state_data.language || 'en-AU';
     this.fallbackLang = 'en';
     this.created = state_data.created || new Date();
     this.updated = new Date();
     this.world = world;
 
-    this.commandResponses = new Lang({
+    this.command_responses = new Lang({
       messages: require('@src/lang.json'),
       locale: langmap.get(this.language).root,
       fallback: this.fallbackLang
     });
 
     this.messages = {};
+  }
+
+  get privates (){
+    return {
+      world : undefined,
+      command_responses : undefined,
+      users : undefined,
+      _presence_rotation_timeout : undefined,
+      _presence_timeout : undefined,
+      _neglect_timeout: undefined,
+      _unfollow_timeout: undefined
+
+    }
   }
 
   addWorld(world) {
@@ -89,36 +105,36 @@ class Server {
   }
 
   addUserSetting(user_id, name, value) {
-    if (!this.userSettings) this.userSettings = {};
-    if (!this.userSettings[user_id]) {
-      this.userSettings[user_id] = {};
+    if (!this.user_settings) this.user_settings = {};
+    if (!this.user_settings[user_id]) {
+      this.user_settings[user_id] = {};
     }
 
-    this.userSettings[user_id][name] = value;
+    this.user_settings[user_id][name] = value;
     this.save();
     return value;
   }
 
 
   clearUserSettings(user_id) {
-    if (!this.userSettings) this.userSettings = {};
-    this.userSettings[user_id] = {};
+    if (!this.user_settings) this.user_settings = {};
+    this.user_settings[user_id] = {};
     this.save();
   }
 
   getUserSetting(user_id, name) {
-    if (!this.userSettings || !this.userSettings[user_id] || !this.userSettings[user_id][name]) return null;
-    return this.userSettings[user_id][name];
+    if (!this.user_settings || !this.user_settings[user_id] || !this.user_settings[user_id][name]) return null;
+    return this.user_settings[user_id][name];
   }
 
   deleteUserSetting(user_id, name) {
-    if (!this.userSettings || !this.userSettings[user_id] || !this.userSettings[user_id][name]) return;
-    delete this.userSettings[user_id][name];
+    if (!this.user_settings || !this.user_settings[user_id] || !this.user_settings[user_id][name]) return;
+    delete this.user_settings[user_id][name];
   }
 
   getUserSettings(user_id) {
-    if (!this.userSettings || !this.userSettings[user_id]) return {};
-    return this.userSettings[user_id];
+    if (!this.user_settings || !this.user_settings[user_id]) return {};
+    return this.user_settings[user_id];
   }
 
   lang(key, params) {
@@ -133,7 +149,7 @@ class Server {
       command_char
     }
 
-    return this.commandResponses.get.apply(this.commandResponses, [
+    return this.command_responses.get.apply(this.command_responses, [
       key,
       params
     ]);
@@ -159,7 +175,7 @@ class Server {
     this.bound_to = null;
     this.bound_to_username = null;
     this.permitted = {};
-    clearTimeout(this.neglect_timeout);
+    clearTimeout(this._neglect_timeout);
 
     this.leaveVoiceChannel();
   };
@@ -316,8 +332,8 @@ class Server {
       server.neglected();
     };
 
-    clearTimeout(server.neglect_timeout);
-    server.neglect_timeout = setTimeout(neglected_timeout, TIMEOUT_NEGLECT);
+    clearTimeout(server._neglect_timeout);
+    server._neglect_timeout = setTimeout(neglected_timeout, TIMEOUT_NEGLECT);
   };
 
   // called when the neglect timeout expires
@@ -446,18 +462,18 @@ class Server {
     var server = this;
     var unfollow_timeout = function () {
       server.release();
-      server.unfollow_timeout = null;
+      server._unfollow_timeout = null;
       server.save();
       server.world.setPresence();
     };
 
-    server.unfollow_timeout = setTimeout(unfollow_timeout, TIMEOUT_LEAVEVOICE);
+    server._unfollow_timeout = setTimeout(unfollow_timeout, TIMEOUT_LEAVEVOICE);
   };
 
   cancelUnfollowTimer() {
-    if (this.unfollow_timeout)
-      clearTimeout(this.unfollow_timeout);
-    this.unfollow_timeout = null;
+    if (this._unfollow_timeout)
+      clearTimeout(this._unfollow_timeout);
+    this._unfollow_timeout = null;
   };
 
   // run this to cleanup resources before shutting down
@@ -478,22 +494,16 @@ class Server {
   // when the server is deleted or shutdown or disconnected run this to cleanup things
   dispose() {
     this.shutdown();
-    clearTimeout(this.neglect_timeout);
+    clearTimeout(this._neglect_timeout);
   };
 
-  // save the state file
+  // save the state file: (query $.servers[*].server_name
   save(_filename) {
     var self = this;
     this.updated = new Date();
-    function replacer(key, value) {
-      if (key.endsWith("_timeout")) return undefined; // these keys are internal timers that we dont want to save
-      if (key == "commandResponses") return undefined;
-      if (key == "world") return undefined;
-      else return value;
-    };
 
     if (!_filename) _filename = paths.config + "/" + self.server_id + ".server";
-    fs.writeFileSync(_filename, JSON.stringify(self, replacer), 'utf-8');
+    fs.writeFileSync(_filename, JSON.stringify(self), 'utf-8');
   };
 
   // load the state file
